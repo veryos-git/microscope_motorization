@@ -1,0 +1,4 @@
+i want to be able to make the installation of this software as easy as possible so i want to have all in one startup / installation script. so the end user only needs to run one command
+the user only needs to install deno js , the installation script then checks with (Deno.command?) if any other binary like esptool has to be installed
+---
+next step is to improve the software. there should be a feature that visualizes the movement on a canvas. it shows the trace of where the center 'passed'. and it somehow is like a minimap in a computer game, it provides an overview of the xy cartesian system. later if a webcam is implemented , the images could also be stitched and used as a background on this 'minimap'. 
