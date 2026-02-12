@@ -2,9 +2,9 @@
  * ESP32-S3 — Three 28BYJ-48 steppers, WebSocket-only API
  *
  * Libraries required (Arduino Library Manager):
- *   - ESPAsyncWebServer  (by lacamera / me-no-dev)
- *   - AsyncTCP           (by dvarrel / me-no-dev)
- *   - ArduinoJson        (by Benoît Blanchon)
+ *   - ESP Async WebServer  (by mathieucarbou)
+ *   - AsyncTCP             (by mathieucarbou)
+ *   - ArduinoJson          (by Benoît Blanchon)
  *
  * Wiring (ULN2003 driver boards, external 5 V supply):
  *   Motor 0: GPIO4, GPIO5, GPIO6, GPIO7

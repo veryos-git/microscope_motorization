@@ -196,7 +196,19 @@ if (shouldFlash) {
   logOk("ESP32 board package installed.");
 
   logStep("Installing required Arduino libraries...");
-  for (const lib of ["ESPAsyncWebServer", "AsyncTCP", "ArduinoJson"]) {
+
+  // Remove old me-no-dev libs that conflict with ESP32 core 3.x
+  const arduinoLibDir = `${Deno.env.get("HOME")}/Arduino/libraries`;
+  for (const oldLib of ["ESPAsyncWebServer", "AsyncTCP", "ESPAsyncTCP"]) {
+    try {
+      await Deno.remove(`${arduinoLibDir}/${oldLib}`, { recursive: true });
+      log(`Removed old conflicting library: ${oldLib}`);
+    } catch { /* not present, fine */ }
+  }
+
+  // Install the mathieucarbou forks (compatible with ESP32 core 3.x)
+  // Note: AsyncTCP is pulled in automatically as a dependency of ESP Async WebServer
+  for (const lib of ["ESP Async WebServer", "ArduinoJson"]) {
     log(`Installing ${lib}...`);
     await runLive(arduinoCliBin, ["lib", "install", lib]);
   }
@@ -256,6 +268,20 @@ if (shouldFlash) {
   }
 
   logOk(`ESP32 detected on ${espPort}`);
+
+  // ─── Step 6b: Ensure serial port is accessible ─────────────────────
+
+  try {
+    await Deno.open(espPort, { read: true });
+  } catch {
+    log(`${espPort} is not readable — fixing permissions with sudo...`);
+    if (!await runLive("sudo", ["chmod", "666", espPort])) {
+      logError(`Could not set permissions on ${espPort}.`);
+      log("Permanent fix: sudo usermod -aG dialout $USER  (then log out and back in)");
+      Deno.exit(1);
+    }
+    logOk("Serial port permissions set.");
+  }
 
   // ─── Step 7: Compile + upload ──────────────────────────────────────
 
