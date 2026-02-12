@@ -25,6 +25,14 @@ computer :
 # installation 
 i want to be able to make the installation of this software as easy as possible so i want to have all in one startup/installation script. so the end user only needs to run one command
 
+
 ## install deno (js)
 
-### run deno -A installation.js
+### run deno -A startup.js
+
+
+# demo 
+<video controls src="demo/WhatsApp Video 2026-02-12 at 21.39.57.mp4" title="Title"></video>
+
+# demo with webapplication
+<video controls src="demo/WhatsApp Video 2026-02-12 at 21.40.17.mp4" title="Title"></video>
