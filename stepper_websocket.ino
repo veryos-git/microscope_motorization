@@ -48,7 +48,7 @@ static const int SEQ_LEN            = 8;
 static const int HALF_STEPS_PER_REV = 4096;
 
 static const unsigned long MIN_STEP_DELAY_US = 900;
-static const unsigned long MAX_STEP_DELAY_US = 5000;
+static const unsigned long MAX_STEP_DELAY_US = 50000;
 
 struct MotorState {
     uint8_t  pins[4];

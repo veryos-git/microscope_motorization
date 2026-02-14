@@ -345,7 +345,7 @@ setTimeout(async () => {
 }, 1000);
 
 // Start the Deno web server as the foreground process
-const serverArgs = ["run", "--allow-net", "--allow-read", SERVER_FILE, "--port", String(port)];
+const serverArgs = ["run", "--allow-net", "--allow-read", "--allow-write", SERVER_FILE, "--port", String(port)];
 if (espIp) {
   serverArgs.push("--esp", espIp);
 }

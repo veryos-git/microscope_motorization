@@ -2,8 +2,8 @@
  * Deno static file server for the stepper motor control UI.
  *
  * Usage:
- *   deno run --allow-net --allow-read server.ts
- *   deno run --allow-net --allow-read server.ts --port 3000 --esp 192.168.1.42
+ *   deno run --allow-net --allow-read --allow-write server.ts
+ *   deno run --allow-net --allow-read --allow-write server.ts --port 3000 --esp 192.168.1.42
  *
  * Flags:
  *   --port <number>   HTTP port (default: 8000)
@@ -25,21 +25,67 @@ const MIME: Record<string, string> = {
 };
 
 const PUBLIC_DIR = new URL("./public/", import.meta.url);
+const SETTINGS_FILE = new URL("./settings.json", import.meta.url);
+
+// ─── Settings API ────────────────────────────────────────────────────
+
+async function loadSettings(): Promise<Record<string, unknown>> {
+  try {
+    const text = await Deno.readTextFile(SETTINGS_FILE);
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
+}
+
+async function saveSettings(data: Record<string, unknown>): Promise<void> {
+  await Deno.writeTextFile(SETTINGS_FILE, JSON.stringify(data, null, 2) + "\n");
+}
+
+// ─── HTTP handler ────────────────────────────────────────────────────
 
 Deno.serve({ port: PORT }, async (req: Request) => {
   const url = new URL(req.url);
-  let pathname = url.pathname === "/" ? "/index.html" : url.pathname;
+  const pathname = url.pathname;
+
+  // ── Settings API ──
+  if (pathname === "/api/settings") {
+    if (req.method === "GET") {
+      const settings = await loadSettings();
+      return new Response(JSON.stringify(settings), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (req.method === "POST") {
+      try {
+        const body = await req.json();
+        await saveSettings(body);
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } catch {
+        return new Response(JSON.stringify({ error: "invalid JSON" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+    return new Response("Method Not Allowed", { status: 405 });
+  }
+
+  // ── Static files ──
+  const resolvedPath = pathname === "/" ? "/index.html" : pathname;
 
   // Prevent directory traversal
-  if (pathname.includes("..")) {
+  if (resolvedPath.includes("..")) {
     return new Response("Forbidden", { status: 403 });
   }
 
-  const filePath = new URL("." + pathname, PUBLIC_DIR);
+  const filePath = new URL("." + resolvedPath, PUBLIC_DIR);
 
   try {
     let body: BodyInit;
-    const ext = pathname.substring(pathname.lastIndexOf("."));
+    const ext = resolvedPath.substring(resolvedPath.lastIndexOf("."));
     const contentType = MIME[ext] ?? "application/octet-stream";
 
     if (ext === ".html" && ESP_IP) {
