@@ -4,7 +4,7 @@
 const SCRIPT_DIR = new URL(".", import.meta.url).pathname;
 const INO_FILE = `${SCRIPT_DIR}stepper_websocket.ino`;
 const ENV_FILE = `${SCRIPT_DIR}.env`;
-const SERVER_FILE = `${SCRIPT_DIR}server.ts`;
+const SERVER_FILE = `${SCRIPT_DIR}webserver_denojs.js`;
 const TMP_DIR = "/tmp/stepper_websocket";
 const TMP_INO = `${TMP_DIR}/stepper_websocket.ino`;
 

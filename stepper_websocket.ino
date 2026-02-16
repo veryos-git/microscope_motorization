@@ -34,9 +34,9 @@ const char* WIFI_PASS = "{{wifi_password}}";
 static const int NUM_MOTORS = 3;
 
 static const uint8_t MOTOR_PINS[NUM_MOTORS][4] = {
-    { 4,  5,  6,  7},
-    {15, 16, 17, 18},
-    { 8,  9, 10, 11},
+    { {{n_pin1__motor_0}}, {{n_pin2__motor_0}}, {{n_pin3__motor_0}}, {{n_pin4__motor_0}} },
+    { {{n_pin1__motor_1}}, {{n_pin2__motor_1}}, {{n_pin3__motor_1}}, {{n_pin4__motor_1}} },
+    { {{n_pin1__motor_2}}, {{n_pin2__motor_2}}, {{n_pin3__motor_2}}, {{n_pin4__motor_2}} },
 };
 
 static const uint8_t HALF_STEP_SEQ[8][4] = {
