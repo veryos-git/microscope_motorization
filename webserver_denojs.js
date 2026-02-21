@@ -203,6 +203,73 @@ let f_handler = async function(o_request, o_conninfo) {
                 }
             }
 
+            // ── Manual stitch folder creation ─────────────────────
+            if(o_data.s_type === 'manual_stitch_create_folder'){
+                try {
+                    let o_date = new Date();
+                    let s_name_folder = 'manual_stitch_'
+                        + o_date.getFullYear() + '-'
+                        + String(o_date.getMonth() + 1).padStart(2, '0') + '-'
+                        + String(o_date.getDate()).padStart(2, '0') + '_'
+                        + String(o_date.getHours()).padStart(2, '0')
+                        + String(o_date.getMinutes()).padStart(2, '0')
+                        + String(o_date.getSeconds()).padStart(2, '0');
+                    let s_path_folder = s_root_dir + s_ds + 'scans' + s_ds + s_name_folder;
+                    await Deno.mkdir(s_path_folder, { recursive: true });
+                    o_socket.send(JSON.stringify({
+                        v_result: { s_path_folder: s_path_folder },
+                        s_uuid: o_data.s_uuid,
+                    }));
+                } catch (o_error) {
+                    console.error('manual_stitch_create_folder error:', o_error);
+                    o_socket.send(JSON.stringify({
+                        error: o_error.message,
+                        s_uuid: o_data.s_uuid,
+                    }));
+                }
+            }
+
+            // ── Manual stitch run ────────────────────────────────
+            if(o_data.s_type === 'manual_stitch_run'){
+                try {
+                    let s_path_folder = o_data.v_data.s_path_folder;
+                    let s_path_output = s_path_folder + s_ds + 'stitched.jpg';
+                    let s_path_script = s_root_dir + s_ds + 'stich_image_in_folder.py';
+
+                    let s_path_python = s_root_dir + s_ds + 'venv' + s_ds + 'bin' + s_ds + 'python3';
+                    let o_command = new Deno.Command(s_path_python, {
+                        args: [s_path_script, s_path_output, s_path_folder],
+                        stdout: 'piped',
+                        stderr: 'piped',
+                    });
+                    let o_child = await o_command.output();
+                    let s_stdout = new TextDecoder().decode(o_child.stdout);
+                    let s_stderr = new TextDecoder().decode(o_child.stderr);
+
+                    if(s_stderr){
+                        console.error('stitch stderr:', s_stderr);
+                    }
+
+                    let o_result;
+                    try {
+                        o_result = JSON.parse(s_stdout);
+                    } catch {
+                        o_result = { b_success: false, s_error: 'failed to parse stitch output: ' + s_stdout };
+                    }
+
+                    o_socket.send(JSON.stringify({
+                        v_result: o_result,
+                        s_uuid: o_data.s_uuid,
+                    }));
+                } catch (o_error) {
+                    console.error('manual_stitch_run error:', o_error);
+                    o_socket.send(JSON.stringify({
+                        v_result: { b_success: false, s_error: o_error.message },
+                        s_uuid: o_data.s_uuid,
+                    }));
+                }
+            }
+
             if(o_data.s_type === 'flash_esp'){
                 let v = o_data.v_data;
                 let f_on_line = function(s_line, s_source){

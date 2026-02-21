@@ -16,6 +16,7 @@ import { o_component__minimap } from './o_component__minimap.js';
 import { o_component__motor } from './o_component__motor.js';
 import { o_component__scan } from './o_component__scan.js';
 import { o_component__camera_setting } from './o_component__camera_setting.js';
+import { o_component__manual_stitch } from './o_component__manual_stitch.js';
 import { o_component__page_setup } from './o_component__page_setup.js';
 import { o_component__page_control } from './o_component__page_control.js';
 
@@ -49,7 +50,7 @@ let o_state = reactive({
     o_mapping__d: { s_motor: '0', s_dir: 'cw' },
 
     // UI
-    o_panel_visibility: { jog: true, minimap: true, motors: true, scan: false, camera_setting: false },
+    o_panel_visibility: { jog: true, minimap: true, motors: true, scan: false, camera_setting: false, manual_stitch: false },
     o_key_held: {},
 
     // scan
@@ -208,6 +209,7 @@ let f_apply_setting_from_db = function(){
     o_state.o_panel_visibility.motors = o_vis.motors;
     o_state.o_panel_visibility.scan = o_vis.scan || false;
     o_state.o_panel_visibility.camera_setting = o_vis.camera_setting || false;
+    o_state.o_panel_visibility.manual_stitch = o_vis.manual_stitch || false;
 
     o_state.o_mapping__w = f_get_json('o_mapping__w', o_state.o_mapping__w);
     o_state.o_mapping__s = f_get_json('o_mapping__s', o_state.o_mapping__s);
@@ -457,6 +459,7 @@ o_app.component('o_component__minimap', o_component__minimap);
 o_app.component('o_component__motor', o_component__motor);
 o_app.component('o_component__scan', o_component__scan);
 o_app.component('o_component__camera_setting', o_component__camera_setting);
+o_app.component('o_component__manual_stitch', o_component__manual_stitch);
 
 o_app.use(o_router);
 

@@ -133,8 +133,20 @@ let o_component__scan = {
                     <button class="btn-scan-stop" @click="f_stop_scan">Stop Scan</button>
                 </template>
 
+                <!-- ── Stitching ───────────────────────────── -->
+                <template v-if="s_status === 'stitching'">
+                    <div class="scan-progress-text">Stitching {{ n_cnt__tile__captured }} images...</div>
+                </template>
+
                 <!-- ── Summary (complete) ────────────────── -->
                 <template v-if="s_status === 'complete'">
+                    <div v-if="s_path__stitched_image" class="scan-stitch-result">
+                        <img
+                            :src="'/api/file?path=' + encodeURIComponent(s_path__stitched_image)"
+                            class="scan-stitch-preview"
+                        />
+                    </div>
+                    <div v-if="s_error__stitch" class="scan-stitch-error">{{ s_error__stitch }}</div>
                     <div class="scan-summary">
                         <div class="scan-summary-item">
                             <span class="scan-summary-label">Images captured</span>
@@ -182,6 +194,10 @@ let o_component__scan = {
             // elapsed timer
             n_id__elapsed_interval: 0,
             s_elapsed: '0:00',
+
+            // stitch
+            s_path__stitched_image: '',
+            s_error__stitch: '',
         };
     },
 
@@ -424,7 +440,6 @@ let o_component__scan = {
             o_self.f_stop_elapsed_timer();
             o_state.b_scanning = false;
             o_self.n_idx__cell__current = -1;
-            o_self.s_status = 'complete';
             o_self.s_status__detail = '';
 
             console.log(
@@ -432,6 +447,27 @@ let o_component__scan = {
                 + ': ' + o_self.n_cnt__tile__captured + '/' + (o_self.n_tile_x * o_self.n_tile_y)
                 + ' tiles captured in ' + o_self.s_elapsed
             );
+
+            // auto-stitch if we have at least 2 images
+            if(o_self.n_cnt__tile__captured >= 2){
+                o_self.s_status = 'stitching';
+                try {
+                    let o_resp = await f_send_wsmsg_with_response(
+                        f_o_wsmsg('manual_stitch_run', { s_path_folder: o_self.s_path_folder__scan })
+                    );
+                    let o_result = o_resp.v_result;
+                    if(o_result && o_result.b_success){
+                        o_self.s_path__stitched_image = o_result.s_path_output;
+                    } else {
+                        o_self.s_error__stitch = 'Stitch failed: ' + (o_result ? o_result.s_error : 'unknown error');
+                    }
+                } catch(o_error) {
+                    console.error('scan stitch error:', o_error);
+                    o_self.s_error__stitch = o_error.message;
+                }
+            }
+
+            o_self.s_status = 'complete';
         },
 
         f_stop_scan: function() {
@@ -446,6 +482,8 @@ let o_component__scan = {
             this.a_b_captured = [];
             this.s_path_folder__scan = '';
             this.s_elapsed = '0:00';
+            this.s_path__stitched_image = '';
+            this.s_error__stitch = '';
         },
     },
 

@@ -44,6 +44,11 @@ let o_component__toolbar = {
                 :class="{ active: o_state.o_panel_visibility.camera_setting }"
                 @click="f_toggle_panel('camera_setting')"
             >Cam</button>
+            <button
+                class="toolbar-toggle"
+                :class="{ active: o_state.o_panel_visibility.manual_stitch }"
+                @click="f_toggle_panel('manual_stitch')"
+            >Stitch</button>
 
             <div class="toolbar-spacer"></div>
 
