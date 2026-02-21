@@ -364,7 +364,7 @@ await serverProcess.output();
 
 async function readEspIpFromSerial(port, timeoutMs) {
   const command = new Deno.Command(arduinoCliBin, {
-    args: ["monitor", "-p", port, "--raw"],
+    args: ["monitor", "-p", port, "--raw", "-c", "baudrate=115200"],
     stdout: "piped",
     stderr: "piped",
     stdin: "null",

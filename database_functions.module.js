@@ -148,13 +148,27 @@ let f_v_crud__indb = function(
         if(!a_s_name_property.includes(s_name_prop_id)){
             throw new Error(`id property (${s_name_prop_id}) is required for update`);
         }
-        let a_s_error = f_a_s_error__invalid_model_instance(o_model, v_o_data_update);
+        // partial validation: only check properties present in v_o_data_update
+        let a_s_error = [];
+        for(let s_key in v_o_data_update){
+            let o_model_prop = o_model.a_o_property.find(function(o){ return o.s_name === s_key; });
+            if(!o_model_prop){
+                a_s_error.push(`Property ${s_key} not found in model ${o_model.s_name}`);
+                continue;
+            }
+            if(o_model_prop.f_b_val_valid && !o_model_prop.f_b_val_valid(v_o_data_update[s_key])){
+                a_s_error.push(`Invalid value for property ${s_key}: ${v_o_data_update[s_key]}`);
+            }
+        }
         if(a_s_error.length > 0){
             throw new Error('Invalid model instance: ' + a_s_error.join('; '));
         }
 
+        let a_s_key_update = Object.keys(v_o_data_update);
+        let a_v_value_update = Object.values(v_o_data_update);
+        let a_s_set = a_s_key_update.map(function(s){ return `${s} = ?`; });
         let s_sql = `UPDATE ${s_name_table} SET ${a_s_set.join(', ')} WHERE ${s_name_prop_id} = ?`;
-        o_db.prepare(s_sql).run(...a_v_value);
+        o_db.prepare(s_sql).run(...a_v_value_update, v_o_data.n_id);
 
         v_return = o_db.prepare(`SELECT * FROM ${s_name_table} WHERE n_id = ?`).get(v_o_data.n_id)
     }

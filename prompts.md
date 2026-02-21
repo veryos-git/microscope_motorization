@@ -15,3 +15,21 @@ the flow of the application is the following
 
  if the user starts the webapp and a esp32 is already connected the user should be taken to the microscope controll page 
  
+---
+the webcam video should not be a <video> html element but a canvas element
+
+---
+create another overlay window 'scan' that is there for the functionality of scanning a region of the current slide. 
+it fundamentally works like this: 
+    when started a new folder for this particular scan is created on the server. after this the user control of the motors is disabled.  the script automatically controlls the xy motors so that the microscope slide
+    moves in a snake like path. then after each movement (x or y) a picture is taken and stored in a new folder on the server. a started scan, can be stopped at any time. each picture should have a certain overlap . finally all taken pictures can be stitched by another process. the final result will be a big stitched image. 
+    before starting a scan , the programm needs to know some information from the user 
+    the user can enter:
+        distance of movements.
+            depending on the current zoom factor / depending on what lens the microscope has on , the movement distance should be bigger or smaller. also depending on the aspect ratio of the microscope webcam image the movement on the axis x and y are most likely not the same. for example if the aspec ratio is 2:1, the movement on the x axis would be twice as much as the movement on the y axis. 
+            the movement distance can be entered in steps. next to the input there should also be a button 'test distance' if this is pressed , the currently set distance will be executed by the motor , this way a user can set and fine tune a correct  movement distance. 
+        tiles 
+            how many movements should be done on each axis the multiplied result of those two numbers will be the amount of images taken, for example 3x3 => 9 images, 
+        x tiles (default 3)
+        y tiles (default 3)
+

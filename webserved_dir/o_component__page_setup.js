@@ -1,4 +1,4 @@
-import { o_state, f_send_wsmsg_with_response, f_register_handler, f_save_setting, f_connect_esp, o_router } from './index.js';
+import { o_state, o_socket, f_send_wsmsg_with_response, f_register_handler, f_save_setting, f_connect_esp, o_router } from './index.js';
 import { f_o_wsmsg } from './constructors.module.js';
 
 let o_component__page_setup = {
@@ -102,6 +102,19 @@ let o_component__page_setup = {
                         {{ s_flash_status_label }}
                     </div>
                     <pre class="flash-console" ref="el_pre__flash">{{ o_state.s_flash_output }}</pre>
+                    <div v-if="b_password_request" class="flash-password-prompt">
+                        <label>Sudo password required for serial port access:</label>
+                        <div class="setup-input-row inline">
+                            <input
+                                type="password"
+                                v-model="s_sudo_password"
+                                placeholder="Enter your sudo password"
+                                @keyup.enter="f_submit_password"
+                                ref="el_input__password"
+                            />
+                            <button class="btn-connect" @click="f_submit_password">Submit</button>
+                        </div>
+                    </div>
                 </section>
 
                 <!-- Skip / Manual IP -->
@@ -131,6 +144,9 @@ let o_component__page_setup = {
             b_arduino_cli_installed: false,
             s_arduino_cli_version: '',
             a_s_color_accent: ['#ff6b35', '#00d4aa', '#5b8def'],
+            b_password_request: false,
+            s_sudo_password: '',
+            f_resolve_password: null,
         };
     },
     computed: {
@@ -171,12 +187,21 @@ let o_component__page_setup = {
                 console.error('Arduino CLI check error:', o_err);
             }
         },
+        f_submit_password: function() {
+            if (this.f_resolve_password && this.s_sudo_password) {
+                this.f_resolve_password(this.s_sudo_password);
+                this.f_resolve_password = null;
+                this.b_password_request = false;
+                this.s_sudo_password = '';
+            }
+        },
         f_start_flash: async function() {
+            let self = this;
             o_state.b_flashing = true;
             o_state.s_flash_status = 'flashing';
             o_state.s_flash_output = '';
 
-            // register handler for progress messages
+            // register handler for progress and password request messages
             let f_unregister = f_register_handler(function(o_data) {
                 if (o_data.s_type === 'flash_progress') {
                     o_state.s_flash_output += o_data.v_data.s_line + '\n';
@@ -187,6 +212,22 @@ let o_component__page_setup = {
                             el.scrollTop = el.scrollHeight;
                         });
                     }
+                }
+                if (o_data.s_type === 'flash_password_request') {
+                    self.b_password_request = true;
+                    self.$nextTick(function() {
+                        if (self.$refs.el_input__password) {
+                            self.$refs.el_input__password.focus();
+                        }
+                    });
+                    new Promise(function(resolve) {
+                        self.f_resolve_password = resolve;
+                    }).then(function(s_password) {
+                        o_socket.send(JSON.stringify({
+                            s_type: 'flash_password_response',
+                            v_data: { s_password: s_password },
+                        }));
+                    });
                 }
             });
 

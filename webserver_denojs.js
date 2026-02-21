@@ -67,6 +67,8 @@ let f_handler = async function(o_request, o_conninfo) {
     if (o_request.headers.get('upgrade') === 'websocket') {
         let { socket: o_socket, response: o_response } = Deno.upgradeWebSocket(o_request);
 
+        let f_resolve_password__pending = null;
+
         let s_ip = o_request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
             || o_conninfo.remoteAddr.hostname;
 
@@ -168,6 +170,13 @@ let f_handler = async function(o_request, o_conninfo) {
                 }));
             }
 
+            if(o_data.s_type === 'flash_password_response'){
+                if(f_resolve_password__pending){
+                    f_resolve_password__pending(o_data.v_data.s_password);
+                    f_resolve_password__pending = null;
+                }
+            }
+
             if(o_data.s_type === 'flash_esp'){
                 let v = o_data.v_data;
                 let f_on_line = function(s_line, s_source){
@@ -179,12 +188,22 @@ let f_handler = async function(o_request, o_conninfo) {
                     } catch { /* socket may have closed */ }
                 };
 
+                let f_s_request_password = function(){
+                    return new Promise(function(resolve){
+                        f_resolve_password__pending = resolve;
+                        o_socket.send(JSON.stringify({
+                            s_type: 'flash_password_request',
+                        }));
+                    });
+                };
+
                 let o_result = await f_flash_esp(
                     v.s_port,
                     v.s_wifi_ssid,
                     v.s_wifi_password,
                     v.a_o_pin_config,
                     f_on_line,
+                    f_s_request_password,
                 );
 
                 // update stored ESP IP if flash succeeded

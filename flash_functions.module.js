@@ -242,7 +242,7 @@ let f_install_esp32_deps = async function(f_on_line) {
 
 // ─── Full flash pipeline ────────────────────────────────────────────
 
-let f_flash_esp = async function(s_port, s_wifi_ssid, s_wifi_password, a_o_pin_config, f_on_line) {
+let f_flash_esp = async function(s_port, s_wifi_ssid, s_wifi_password, a_o_pin_config, f_on_line, f_s_request_password) {
     let s_bin = await f_s_arduino_cli_bin();
     if (!s_bin) {
         f_on_line('arduino-cli not found. Installing...', 'stdout');
@@ -270,10 +270,32 @@ let f_flash_esp = async function(s_port, s_wifi_ssid, s_wifi_password, a_o_pin_c
 
     // fix serial port permissions if needed
     try {
-        await Deno.open(s_port, { read: true });
+        let o_file = await Deno.open(s_port, { read: true });
+        o_file.close();
     } catch {
-        f_on_line(`Fixing permissions on ${s_port}...`, 'stdout');
-        await f_run_and_stream('sudo', ['chmod', '666', s_port], f_on_line);
+        f_on_line(`Need permission to access ${s_port}. Please enter your sudo password.`, 'stdout');
+        let s_sudo_password = '';
+        if (f_s_request_password) {
+            s_sudo_password = await f_s_request_password();
+        }
+        if (!s_sudo_password) {
+            return { b_success: false, s_ip__esp: '', s_error: 'No password provided for serial port permissions' };
+        }
+        let o_command = new Deno.Command('sudo', {
+            args: ['-S', 'chmod', '666', s_port],
+            stdout: 'piped',
+            stderr: 'piped',
+            stdin: 'piped',
+        });
+        let o_process = o_command.spawn();
+        let o_writer = o_process.stdin.getWriter();
+        await o_writer.write(new TextEncoder().encode(s_sudo_password + '\n'));
+        await o_writer.close();
+        let o_status = await o_process.status;
+        if (!o_status.success) {
+            return { b_success: false, s_ip__esp: '', s_error: 'Failed to fix serial port permissions (wrong password?)' };
+        }
+        f_on_line(`Permissions fixed on ${s_port}.`, 'stdout');
     }
 
     // compile
@@ -304,13 +326,14 @@ let f_flash_esp = async function(s_port, s_wifi_ssid, s_wifi_password, a_o_pin_c
     f_on_line('Firmware uploaded successfully!', 'stdout');
 
     // read serial for IP
-    f_on_line('--- Waiting for ESP32 to connect to WiFi (20s timeout) ---', 'stdout');
+    f_on_line('--- Waiting for ESP32 to connect to WiFi (30s timeout) ---', 'stdout');
     let s_ip__esp = '';
     try {
-        s_ip__esp = await f_s_read_serial_ip(s_bin, s_port, 20000, f_on_line);
+        s_ip__esp = await f_s_read_serial_ip(s_bin, s_port, 30000, f_on_line);
         f_on_line(`ESP32 connected! IP: ${s_ip__esp}`, 'stdout');
-    } catch {
-        f_on_line('Could not detect ESP32 IP automatically.', 'stderr');
+    } catch (o_err) {
+        f_on_line(`Could not detect ESP32 IP automatically: ${o_err.message}`, 'stderr');
+        f_on_line('You can enter the IP manually on the setup page.', 'stderr');
     }
 
     return { b_success: true, s_ip__esp: s_ip__esp, s_error: '' };
@@ -320,7 +343,7 @@ let f_flash_esp = async function(s_port, s_wifi_ssid, s_wifi_password, a_o_pin_c
 
 let f_s_read_serial_ip = async function(s_bin, s_port, n_ms__timeout, f_on_line) {
     let o_command = new Deno.Command(s_bin, {
-        args: ['monitor', '-p', s_port, '--raw'],
+        args: ['monitor', '-p', s_port, '--raw', '-c', 'baudrate=115200'],
         stdout: 'piped',
         stderr: 'piped',
         stdin: 'null',
