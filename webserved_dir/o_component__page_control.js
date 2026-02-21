@@ -8,6 +8,8 @@ let o_component__page_control = {
         <o_component__jog />
         <o_component__minimap />
         <o_component__motor />
+        <o_component__scan />
+        <o_component__camera_setting />
     `,
     data: function() {
         return {

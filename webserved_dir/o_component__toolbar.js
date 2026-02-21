@@ -34,6 +34,16 @@ let o_component__toolbar = {
                 :class="{ active: o_state.o_panel_visibility.motors }"
                 @click="f_toggle_panel('motors')"
             >Motors</button>
+            <button
+                class="toolbar-toggle"
+                :class="{ active: o_state.o_panel_visibility.scan }"
+                @click="f_toggle_panel('scan')"
+            >Scan</button>
+            <button
+                class="toolbar-toggle"
+                :class="{ active: o_state.o_panel_visibility.camera_setting }"
+                @click="f_toggle_panel('camera_setting')"
+            >Cam</button>
 
             <div class="toolbar-spacer"></div>
 

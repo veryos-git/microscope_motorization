@@ -1,3 +1,4 @@
 .env
 .gitignored/
 image_stitching_test/
+scans/

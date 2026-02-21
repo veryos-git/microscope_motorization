@@ -75,9 +75,11 @@ let o_component__webcam = {
                 });
                 o_self.$refs.el_video.srcObject = o_self.o_stream;
                 o_self.b_streaming = true;
+                o_state.b_streaming__webcam = true;
             } catch(e) {
                 console.error('Webcam start failed:', e);
                 o_self.b_streaming = false;
+                o_state.b_streaming__webcam = false;
             }
         },
         f_stop_webcam: function() {
@@ -87,6 +89,7 @@ let o_component__webcam = {
                 o_self.o_stream = null;
             }
             o_self.b_streaming = false;
+            o_state.b_streaming__webcam = false;
         },
     },
     beforeUnmount: function() {

@@ -177,6 +177,32 @@ let f_handler = async function(o_request, o_conninfo) {
                 }
             }
 
+            // ── Scan folder creation ─────────────────────────────
+            if(o_data.s_type === 'scan_create_folder'){
+                try {
+                    let o_date = new Date();
+                    let s_name_folder = 'scan_'
+                        + o_date.getFullYear() + '-'
+                        + String(o_date.getMonth() + 1).padStart(2, '0') + '-'
+                        + String(o_date.getDate()).padStart(2, '0') + '_'
+                        + String(o_date.getHours()).padStart(2, '0')
+                        + String(o_date.getMinutes()).padStart(2, '0')
+                        + String(o_date.getSeconds()).padStart(2, '0');
+                    let s_path_folder = s_root_dir + s_ds + 'scans' + s_ds + s_name_folder;
+                    await Deno.mkdir(s_path_folder, { recursive: true });
+                    o_socket.send(JSON.stringify({
+                        v_result: { s_path_folder: s_path_folder },
+                        s_uuid: o_data.s_uuid,
+                    }));
+                } catch (o_error) {
+                    console.error('scan_create_folder error:', o_error);
+                    o_socket.send(JSON.stringify({
+                        error: o_error.message,
+                        s_uuid: o_data.s_uuid,
+                    }));
+                }
+            }
+
             if(o_data.s_type === 'flash_esp'){
                 let v = o_data.v_data;
                 let f_on_line = function(s_line, s_source){
@@ -245,6 +271,32 @@ let f_handler = async function(o_request, o_conninfo) {
             });
         } catch (o_error) {
             console.error('Error in exposed function:', o_sfunexposed.s_name, o_error);
+            return new Response('Error: ' + o_error.message, { status: 500 });
+        }
+    }
+
+    // scan image save endpoint
+    if (s_path === '/api/scan/save_image' && o_request.method === 'POST') {
+        let s_path_folder = o_url.searchParams.get('s_path_folder');
+        let s_filename = o_url.searchParams.get('s_filename');
+        if (!s_path_folder || !s_filename) {
+            return new Response('Missing s_path_folder or s_filename', { status: 400 });
+        }
+        // basic path safety: folder must be under <root>/scans/
+
+        let s_scans_prefix = s_root_dir + s_ds + 'scans' + s_ds;
+        if (!s_path_folder.startsWith(s_scans_prefix) || s_filename.includes('..') || s_filename.includes(s_ds)) {
+            return new Response('Invalid path', { status: 400 });
+        }
+        try {
+            let a_n_byte = new Uint8Array(await o_request.arrayBuffer());
+            let s_path_file = s_path_folder + s_ds + s_filename;
+            await Deno.writeFile(s_path_file, a_n_byte);
+            return new Response(JSON.stringify({ b_success: true }), {
+                headers: { 'content-type': 'application/json' },
+            });
+        } catch (o_error) {
+            console.error('scan save_image error:', o_error);
             return new Response('Error: ' + o_error.message, { status: 500 });
         }
     }

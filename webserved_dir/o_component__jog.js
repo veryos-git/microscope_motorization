@@ -1,9 +1,10 @@
-import { o_state, f_send_esp, f_save_setting, f_save_setting__debounced } from './index.js';
+import { o_state, f_send_esp, f_send_esp_run_continuous, f_save_setting, f_save_setting__debounced } from './index.js';
 
 // ─── Gamepad constants ──────────────────────────────────────────────
 
 let N_DEADZONE = 0.15;
 let N_MS__GAMEPAD_POLL = 50;
+let N_RPM__MIN = 0.05;
 
 let o_component__jog = {
     name: 'component-jog',
@@ -29,19 +30,19 @@ let o_component__jog = {
                             </div>
                         </div>
                         <div class="jog-speed-group" style="margin-top: 12px;">
-                            <label>Jog Speed <span class="speed-value">{{ o_state.n_speed__jog }}%</span></label>
+                            <label>Jog RPM <span class="speed-value">{{ o_state.n_rpm__jog.toFixed(1) }}</span></label>
                             <input
                                 type="range"
-                                min="1" max="100"
-                                v-model.number="o_state.n_speed__jog"
-                                @input="f_on_speed_change"
+                                min="0.05" max="15" step="0.05"
+                                v-model.number="o_state.n_rpm__jog"
+                                @input="f_on_rpm_change"
                             >
                             <input
                                 type="number"
-                                min="1" max="100"
-                                v-model.number="o_state.n_speed__jog"
-                                @input="f_on_speed_change"
-                                style="width:52px; margin-top:4px; background:rgba(10,10,12,0.6); border:1px solid var(--border); border-radius:6px; padding:4px 6px; color:var(--text); font-family:'JetBrains Mono',monospace; font-size:0.7rem; text-align:center; outline:none;"
+                                min="0.05" max="15" step="0.05"
+                                v-model.number="o_state.n_rpm__jog"
+                                @input="f_on_rpm_change"
+                                style="width:62px; margin-top:4px; background:rgba(10,10,12,0.6); border:1px solid var(--border); border-radius:6px; padding:4px 6px; color:var(--text); font-family:'JetBrains Mono',monospace; font-size:0.7rem; text-align:center; outline:none;"
                             >
                         </div>
                     </div>
@@ -103,8 +104,8 @@ let o_component__jog = {
             o_state.o_panel_visibility.jog = false;
             f_save_setting__debounced('o_panel_visibility', o_state.o_panel_visibility);
         },
-        f_on_speed_change: function() {
-            f_save_setting__debounced('n_speed__jog', String(o_state.n_speed__jog));
+        f_on_rpm_change: function() {
+            f_save_setting__debounced('n_rpm__jog', String(o_state.n_rpm__jog));
         },
         f_on_mapping_change: function(s_key) {
             f_save_setting('o_mapping__' + s_key, o_state['o_mapping__' + s_key]);
@@ -121,18 +122,20 @@ let o_component__jog = {
             let o_self = this;
             let s_key = o_evt.key.toLowerCase();
             if(!['w','a','s','d'].includes(s_key)) return;
-            if(o_state.o_key_held[s_key]) return; // already held
+            if(o_state.b_scanning) return;
+            if(o_state.o_key_held[s_key]) return;
             o_state.o_key_held[s_key] = true;
 
             let o_mapping = o_self.f_get_mapping(s_key);
             if(o_mapping){
-                f_send_esp({ motor: o_mapping.motor, speed: o_state.n_speed__jog, direction: o_mapping.direction });
+                f_send_esp_run_continuous(o_mapping.motor, o_state.n_rpm__jog, o_mapping.direction);
             }
         },
         f_on_keyup: function(o_evt) {
             let o_self = this;
             let s_key = o_evt.key.toLowerCase();
             if(!['w','a','s','d'].includes(s_key)) return;
+            if(o_state.b_scanning) return;
             o_state.o_key_held[s_key] = false;
 
             let o_mapping = o_self.f_get_mapping(s_key);
@@ -141,7 +144,6 @@ let o_component__jog = {
             }
         },
         f_on_blur: function() {
-            // stop all held keys on window blur
             for(let s_key of ['w','a','s','d']){
                 if(o_state.o_key_held[s_key]){
                     o_state.o_key_held[s_key] = false;
@@ -212,13 +214,14 @@ let o_component__jog = {
             let o_mapping = o_self.f_get_mapping(s_key);
             if(!o_mapping) return;
 
-            let n_speed = Math.round(Math.abs(n_val) * o_state.n_speed__jog);
-            if(n_speed <= 0) return;
+            let n_rpm = Math.abs(n_val) * o_state.n_rpm__jog;
+            if(n_rpm < N_RPM__MIN) return;
 
-            f_send_esp({ motor: o_mapping.motor, speed: n_speed, direction: o_mapping.direction });
+            f_send_esp_run_continuous(o_mapping.motor, n_rpm, o_mapping.direction);
         },
         f_poll_gamepad: function() {
             let o_self = this;
+            if(o_state.b_scanning) return;
             let a_o_gamepad = navigator.getGamepads();
             let o_gamepad = null;
             for(let o_gp of a_o_gamepad){
@@ -260,7 +263,6 @@ let o_component__jog = {
     },
     mounted: function() {
         let o_self = this;
-        // keyboard listeners
         o_self._f_on_keydown = function(e){ o_self.f_on_keydown(e); };
         o_self._f_on_keyup = function(e){ o_self.f_on_keyup(e); };
         o_self._f_on_blur = function(){ o_self.f_on_blur(); };
@@ -268,7 +270,6 @@ let o_component__jog = {
         document.addEventListener('keyup', o_self._f_on_keyup);
         window.addEventListener('blur', o_self._f_on_blur);
 
-        // gamepad listeners
         o_self._f_on_gamepad_connected = function(e){ o_self.f_on_gamepad_connected(e); };
         o_self._f_on_gamepad_disconnected = function(e){ o_self.f_on_gamepad_disconnected(e); };
         window.addEventListener('gamepadconnected', o_self._f_on_gamepad_connected);

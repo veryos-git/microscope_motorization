@@ -33,3 +33,7 @@ it fundamentally works like this:
         x tiles (default 3)
         y tiles (default 3)
 
+---
+there is a fundamental problem when moving the xy table. 
+unfortunately the stepper motors have some backlash. this means that if the motor direction is changed , the motor shaft will not imediately turn to the other direction. we have to compensate for this. so when changing direction there should be a movement of n additional steps that are done. those compensation steps should be done in the fastest speed possible. the steps that follow after the direction change are 'normal' again (depening on the current motor speed)  
+in the motors panel there should be a config value where a user can enter the number of compensation steps

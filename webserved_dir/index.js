@@ -14,6 +14,8 @@ import { o_component__webcam } from './o_component__webcam.js';
 import { o_component__jog } from './o_component__jog.js';
 import { o_component__minimap } from './o_component__minimap.js';
 import { o_component__motor } from './o_component__motor.js';
+import { o_component__scan } from './o_component__scan.js';
+import { o_component__camera_setting } from './o_component__camera_setting.js';
 import { o_component__page_setup } from './o_component__page_setup.js';
 import { o_component__page_control } from './o_component__page_control.js';
 
@@ -34,25 +36,32 @@ let o_state = reactive({
 
     // motor state from ESP32 status messages
     a_o_motor: [
-        { n_speed: 0, s_direction: 'cw', b_running: false, n_position: 0 },
-        { n_speed: 0, s_direction: 'cw', b_running: false, n_position: 0 },
-        { n_speed: 0, s_direction: 'cw', b_running: false, n_position: 0 },
+        { n_rpm: 0, s_direction: 'cw', b_running: false, n_position: 0, s_mode: 'idle', n_step__remaining: 0, n_step__backlash: 0, b_compensating: false },
+        { n_rpm: 0, s_direction: 'cw', b_running: false, n_position: 0, s_mode: 'idle', n_step__remaining: 0, n_step__backlash: 0, b_compensating: false },
+        { n_rpm: 0, s_direction: 'cw', b_running: false, n_position: 0, s_mode: 'idle', n_step__remaining: 0, n_step__backlash: 0, b_compensating: false },
     ],
 
     // jog settings
-    n_speed__jog: 50,
+    n_rpm__jog: 5.0,
     o_mapping__w: { s_motor: '1', s_dir: 'cw' },
     o_mapping__s: { s_motor: '1', s_dir: 'ccw' },
     o_mapping__a: { s_motor: '0', s_dir: 'ccw' },
     o_mapping__d: { s_motor: '0', s_dir: 'cw' },
 
     // UI
-    o_panel_visibility: { jog: true, minimap: true, motors: true },
+    o_panel_visibility: { jog: true, minimap: true, motors: true, scan: false, camera_setting: false },
     o_key_held: {},
+
+    // scan
+    b_scanning: false,
+
+    // backlash compensation (per motor)
+    a_n_step__backlash: [0, 0, 0],
 
     // webcam
     s_id__webcam_device: '',
     a_o_device__webcam: [],
+    b_streaming__webcam: false,
 
     // gamepad
     s_name__gamepad: '',
@@ -190,18 +199,23 @@ let f_apply_setting_from_db = function(){
     };
 
     o_state.s_ip__esp = o_state.s_ip__esp || f_get('s_ip__esp', '');
-    o_state.n_speed__jog = parseInt(f_get('n_speed__jog', '50'), 10);
+    o_state.n_rpm__jog = parseFloat(f_get('n_rpm__jog', '5.0'));
     o_state.s_id__webcam_device = f_get('s_id__webcam_device', '');
 
-    let o_vis = f_get_json('o_panel_visibility', { jog: true, minimap: true, motors: true });
+    let o_vis = f_get_json('o_panel_visibility', { jog: true, minimap: true, motors: true, scan: false, camera_setting: false });
     o_state.o_panel_visibility.jog = o_vis.jog;
     o_state.o_panel_visibility.minimap = o_vis.minimap;
     o_state.o_panel_visibility.motors = o_vis.motors;
+    o_state.o_panel_visibility.scan = o_vis.scan || false;
+    o_state.o_panel_visibility.camera_setting = o_vis.camera_setting || false;
 
     o_state.o_mapping__w = f_get_json('o_mapping__w', o_state.o_mapping__w);
     o_state.o_mapping__s = f_get_json('o_mapping__s', o_state.o_mapping__s);
     o_state.o_mapping__a = f_get_json('o_mapping__a', o_state.o_mapping__a);
     o_state.o_mapping__d = f_get_json('o_mapping__d', o_state.o_mapping__d);
+
+    // backlash (per motor)
+    o_state.a_n_step__backlash = f_get_json('a_n_step__backlash', o_state.a_n_step__backlash);
 
     // setup page settings
     o_state.s_wifi_ssid = f_get('s_wifi_ssid', o_state.s_wifi_ssid);
@@ -311,6 +325,12 @@ let f_connect_esp = function(s_ip){
                 o_state.b_connected__esp = true;
                 console.log('ESP32 websocket connected');
                 f_send_esp({ command: 'status' });
+                // push backlash config to ESP32 on connect
+                for(let n_idx = 0; n_idx < o_state.a_n_step__backlash.length; n_idx++){
+                    if(o_state.a_n_step__backlash[n_idx] > 0){
+                        f_send_esp({ motor: n_idx, command: 'setBacklash', n_step__backlash: o_state.a_n_step__backlash[n_idx] });
+                    }
+                }
                 n_id__esp_status_poll = setInterval(function(){
                     f_send_esp({ command: 'status' });
                 }, 1000);
@@ -318,13 +338,17 @@ let f_connect_esp = function(s_ip){
 
             o_ws__esp.onmessage = function(o_evt){
                 let o_data = JSON.parse(o_evt.data);
-                if(o_data.type === 'status' && o_data.motors){
-                    for(let n_idx = 0; n_idx < o_data.motors.length && n_idx < o_state.a_o_motor.length; n_idx++){
-                        let o_src = o_data.motors[n_idx];
-                        o_state.a_o_motor[n_idx].n_speed = o_src.speed;
-                        o_state.a_o_motor[n_idx].s_direction = o_src.direction;
-                        o_state.a_o_motor[n_idx].b_running = o_src.running;
-                        o_state.a_o_motor[n_idx].n_position = o_src.position;
+                if(o_data.type === 'status' && o_data.a_o_motor){
+                    for(let n_idx = 0; n_idx < o_data.a_o_motor.length && n_idx < o_state.a_o_motor.length; n_idx++){
+                        let o_src = o_data.a_o_motor[n_idx];
+                        o_state.a_o_motor[n_idx].n_rpm = o_src.n_rpm;
+                        o_state.a_o_motor[n_idx].s_direction = o_src.s_direction;
+                        o_state.a_o_motor[n_idx].b_running = o_src.b_running;
+                        o_state.a_o_motor[n_idx].n_position = o_src.n_position;
+                        o_state.a_o_motor[n_idx].s_mode = o_src.s_mode;
+                        o_state.a_o_motor[n_idx].n_step__remaining = o_src.n_step__remaining;
+                        o_state.a_o_motor[n_idx].n_step__backlash = o_src.n_step__backlash;
+                        o_state.a_o_motor[n_idx].b_compensating = o_src.b_compensating;
                     }
                 }
             };
@@ -355,6 +379,34 @@ let f_send_esp = function(o_msg){
     if(o_ws__esp && o_ws__esp.readyState === WebSocket.OPEN){
         o_ws__esp.send(JSON.stringify(o_msg));
     }
+};
+
+// ─── ESP32 motor command helpers ─────────────────────────────────────
+
+let f_send_esp_run_continuous = function(n_motor, n_rpm, s_direction) {
+    f_send_esp({ motor: n_motor, command: 'runContinuous', n_rpm: n_rpm, direction: s_direction });
+};
+
+let f_send_esp_move_step = function(n_motor, n_step, n_rpm) {
+    return new Promise(function(resolve) {
+        if(!o_ws__esp || o_ws__esp.readyState !== WebSocket.OPEN){
+            resolve(0);
+            return;
+        }
+        let f_on_message = function(o_evt) {
+            let o_data = JSON.parse(o_evt.data);
+            if((o_data.type === 'moveComplete' || o_data.type === 'moveCancelled') && o_data.motor === n_motor){
+                o_ws__esp.removeEventListener('message', f_on_message);
+                resolve(o_data.n_position);
+            }
+        };
+        o_ws__esp.addEventListener('message', f_on_message);
+        f_send_esp({ motor: n_motor, command: 'moveSteps', n_step: n_step, n_rpm: n_rpm });
+    });
+};
+
+let f_send_esp_set_backlash = function(n_motor, n_step__backlash) {
+    f_send_esp({ motor: n_motor, command: 'setBacklash', n_step__backlash: n_step__backlash });
 };
 
 // ─── Vue Router ─────────────────────────────────────────────────────
@@ -403,6 +455,8 @@ o_app.component('o_component__webcam', o_component__webcam);
 o_app.component('o_component__jog', o_component__jog);
 o_app.component('o_component__minimap', o_component__minimap);
 o_app.component('o_component__motor', o_component__motor);
+o_app.component('o_component__scan', o_component__scan);
+o_app.component('o_component__camera_setting', o_component__camera_setting);
 
 o_app.use(o_router);
 
@@ -417,6 +471,9 @@ export {
     f_register_handler,
     f_connect_esp,
     f_send_esp,
+    f_send_esp_run_continuous,
+    f_send_esp_move_step,
+    f_send_esp_set_backlash,
     f_save_setting,
     f_save_setting__debounced,
 }
