@@ -233,12 +233,18 @@ let f_handler = async function(o_request, o_conninfo) {
             if(o_data.s_type === 'manual_stitch_run'){
                 try {
                     let s_path_folder = o_data.v_data.s_path_folder;
+                    let b_row_by_row = o_data.v_data.b_row_by_row || false;
                     let s_path_output = s_path_folder + s_ds + 'stitched.jpg';
                     let s_path_script = s_root_dir + s_ds + 'stich_image_in_folder.py';
 
+                    let a_s_arg_script = [s_path_script, s_path_output, s_path_folder];
+                    if(b_row_by_row){
+                        a_s_arg_script.push('--row-by-row');
+                    }
+
                     let s_path_python = s_root_dir + s_ds + 'venv' + s_ds + 'bin' + s_ds + 'python3';
                     let o_command = new Deno.Command(s_path_python, {
-                        args: [s_path_script, s_path_output, s_path_folder],
+                        args: a_s_arg_script,
                         stdout: 'piped',
                         stderr: 'piped',
                     });

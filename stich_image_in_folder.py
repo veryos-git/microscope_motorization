@@ -76,30 +76,112 @@ def f_stitch(s_path_output, a_s_path_input):
     n_scl_y, n_scl_x = o_result.shape[:2]
     return {"b_success": True, "s_path_output": s_path_output, "s_error": "", "n_scl_x": n_scl_x, "n_scl_y": n_scl_y}
 
+def f_stitch_row_by_row(s_path_output, o_input_dir):
+    """Stitch images row by row: first stitch each row, then stitch all row images together."""
+    import re
+
+    a_extensions = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
+
+    # group files by row number
+    # supports tile_rXX_cXX.ext (from scan) and row_XXXX_img_XXXX.ext (from manual stitch)
+    o_row_map = {}  # n_idx_row -> sorted list of paths
+    for o_path in o_input_dir.iterdir():
+        if o_path.suffix.lower() not in a_extensions:
+            continue
+        o_match = re.match(r'^tile_r(\d+)_c\d+', o_path.stem)
+        if not o_match:
+            o_match = re.match(r'^row_(\d+)_img_\d+', o_path.stem)
+        if not o_match:
+            continue
+        n_idx_row = int(o_match.group(1))
+        if n_idx_row not in o_row_map:
+            o_row_map[n_idx_row] = []
+        o_row_map[n_idx_row].append(str(o_path))
+
+    if len(o_row_map) < 1:
+        return {"b_success": False, "s_path_output": s_path_output, "s_error": "no row images found"}
+
+    a_n_idx_row = sorted(o_row_map.keys())
+
+    # stitch each row
+    a_o_img_row = []
+    s_path_dir_output = str(Path(s_path_output).parent)
+    for n_idx_row in a_n_idx_row:
+        a_s_path_in_row = sorted(o_row_map[n_idx_row])
+        if len(a_s_path_in_row) < 2:
+            # single image in row, just use it directly
+            o_img = cv2.imread(a_s_path_in_row[0])
+            if o_img is None:
+                return {"b_success": False, "s_path_output": s_path_output, "s_error": f"failed to read image: {a_s_path_in_row[0]}"}
+            a_o_img_row.append(o_img)
+            continue
+
+        s_path_row_output = os.path.join(s_path_dir_output, f"stitched_row_{n_idx_row:04d}.jpg")
+        o_result_row = f_stitch(s_path_row_output, a_s_path_in_row)
+        if not o_result_row["b_success"]:
+            o_result_row["s_error"] = f"row {n_idx_row} failed: {o_result_row['s_error']}"
+            return o_result_row
+
+        o_img_row = cv2.imread(s_path_row_output)
+        if o_img_row is None:
+            return {"b_success": False, "s_path_output": s_path_output, "s_error": f"failed to read stitched row {n_idx_row}"}
+        a_o_img_row.append(o_img_row)
+
+    if len(a_o_img_row) < 2:
+        # only one row, just copy its result as the final output
+        cv2.imwrite(s_path_output, a_o_img_row[0])
+        cv2.imwrite(
+            s_path_output.replace(".jpg", "_compressed.png").replace(".jpeg", "_compressed.png"),
+            a_o_img_row[0],
+            [cv2.IMWRITE_PNG_COMPRESSION, 9, cv2.IMWRITE_PNG_STRATEGY, cv2.IMWRITE_PNG_STRATEGY_FILTERED, cv2.IMWRITE_PNG_BILEVEL, 0]
+        )
+        n_scl_y, n_scl_x = a_o_img_row[0].shape[:2]
+        return {"b_success": True, "s_path_output": s_path_output, "s_error": "", "n_scl_x": n_scl_x, "n_scl_y": n_scl_y}
+
+    # stitch all row images together
+    # save row images as temp files and use f_stitch
+    a_s_path_row_temp = []
+    for n_idx, o_img in enumerate(a_o_img_row):
+        s_path_temp = os.path.join(s_path_dir_output, f"stitched_row_{a_n_idx_row[n_idx]:04d}.jpg")
+        if not os.path.exists(s_path_temp):
+            cv2.imwrite(s_path_temp, o_img)
+        a_s_path_row_temp.append(s_path_temp)
+
+    o_result_final = f_stitch(s_path_output, a_s_path_row_temp)
+    if not o_result_final["b_success"]:
+        o_result_final["s_error"] = f"final row stitch failed: {o_result_final['s_error']}"
+    return o_result_final
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(json.dumps({
             "b_success": False,
             "s_path_output": "",
-            "s_error": "usage: python stich_image_in_folder.py <output_path> [input_folder]"
+            "s_error": "usage: python stich_image_in_folder.py <output_path> [input_folder] [--row-by-row]"
         }))
         sys.exit(1)
 
-    s_path_output = sys.argv[1]
+    b_row_by_row = '--row-by-row' in sys.argv
+    a_s_arg = [s for s in sys.argv[1:] if s != '--row-by-row']
+
+    s_path_output = a_s_arg[0]
 
     # use input folder from arg or fall back to script directory
-    if len(sys.argv) >= 3:
-        o_input_dir = Path(sys.argv[2]).resolve()
+    if len(a_s_arg) >= 2:
+        o_input_dir = Path(a_s_arg[1]).resolve()
     else:
         o_input_dir = Path(__file__).resolve().parent
 
-    a_extensions = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
+    if b_row_by_row:
+        o_result = f_stitch_row_by_row(s_path_output, o_input_dir)
+    else:
+        a_extensions = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
+        a_s_path_input = sorted([
+            str(p) for p in o_input_dir.iterdir()
+            if p.suffix.lower() in a_extensions
+        ])
+        o_result = f_stitch(s_path_output, a_s_path_input)
 
-    a_s_path_input = sorted([
-        str(p) for p in o_input_dir.iterdir()
-        if p.suffix.lower() in a_extensions
-    ])
-
-    o_result = f_stitch(s_path_output, a_s_path_input)
     print(json.dumps(o_result))
     sys.exit(0 if o_result["b_success"] else 1)

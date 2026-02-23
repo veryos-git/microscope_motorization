@@ -20,9 +20,13 @@
  *   → { "motor": 0, "command": "setBacklash", "n_step__backlash": 25 }
  *   → { "command": "stopAll" }
  *   → { "command": "status" }
+ *   → { "command": "circleStart", "n_step__radius": 100, "n_rpm": 8.0, "b_loop": false }
+ *   → { "command": "circleStop" }
  *   ← { "type":"status", "a_o_motor":[ {n_rpm,s_direction,b_running,n_position,s_mode,n_step__remaining,n_step__backlash,b_compensating}, ... ] }
  *   ← { "type":"moveComplete", "motor": 0, "n_position": 1734 }
  *   ← { "type":"moveCancelled", "motor": 0, "n_position": 1200 }
+ *   ← { "type":"circleComplete" }
+ *   ← { "type":"circleStopped" }
  */
 
 #include <WiFi.h>
@@ -99,6 +103,30 @@ struct MoveEvent {
 static const int MAX_MOVE_EVENT = 4;
 MoveEvent a_o_move_event[MAX_MOVE_EVENT];
 int n_cnt__move_event = 0;
+
+// ─── Circle mode state ──────────────────────────────────────────────
+// Circle runs entirely on ESP32 — coordinates motors 0 (X) and 1 (Y).
+// Phase 1 (tracing) runs both motors continuously and modulates their
+// RPM with sin/cos so the stage traces a smooth circle.
+// While active, external motor commands are blocked.
+
+struct CircleState {
+    bool  b_active;
+    bool  b_loop;
+    long  n_step__radius;
+    float n_rpm;
+
+    int   n_phase;              // 0=move_to_start, 1=tracing, 2=return_to_center
+    bool  b_segment_started;    // for phases 0 and 2 (motorMoveSteps-based)
+
+    long  n_pos_x__center;      // motor 0 position at circle center
+    long  n_pos_y__center;      // motor 1 position at circle center
+
+    unsigned long n_us__trace_start;   // micros() when tracing began
+    unsigned long n_us__revolution;    // microseconds for one full revolution
+};
+
+CircleState circle;
 
 // ─── WebSocket server ───────────────────────────────────────────────
 
@@ -231,6 +259,157 @@ void motorSetBacklash(int m, long n_step) {
     motors[m].n_step__backlash = (n_step > 0) ? n_step : 0;
 }
 
+// ─── Circle helpers ─────────────────────────────────────────────────
+
+void circleSendEvent(const char* s_type) {
+    JsonDocument doc;
+    doc["type"] = s_type;
+    String json;
+    serializeJson(doc, json);
+    ws.textAll(json);
+}
+
+void circleInit() {
+    circle.b_active            = false;
+    circle.b_loop              = false;
+    circle.n_step__radius      = 0;
+    circle.n_rpm               = 0;
+    circle.n_phase             = 0;
+    circle.b_segment_started   = false;
+    circle.n_pos_x__center     = 0;
+    circle.n_pos_y__center     = 0;
+    circle.n_us__trace_start   = 0;
+    circle.n_us__revolution    = 0;
+}
+
+void circleStart(long n_radius, float n_rpm, bool b_loop) {
+    motorStop(0);
+    motorStop(1);
+
+    circle.b_active          = true;
+    circle.b_loop            = b_loop;
+    circle.n_step__radius    = n_radius;
+    circle.n_rpm             = n_rpm;
+    circle.n_phase           = 0;
+    circle.b_segment_started = false;
+    circle.n_pos_x__center   = motors[0].n_position;
+    circle.n_pos_y__center   = motors[1].n_position;
+
+    // time for one revolution (microseconds)
+    // circumference = 2*PI*R steps, tangential speed = RPM * 4096 / 60 steps/sec
+    circle.n_us__revolution = (unsigned long)(
+        2.0 * PI * (double)n_radius * 60000000.0
+        / ((double)n_rpm * (double)HALF_STEPS_PER_REV)
+    );
+}
+
+void circleStop() {
+    if (!circle.b_active) return;
+    motorStop(0);
+    motorStop(1);
+    circle.b_active = false;
+    circleSendEvent("circleStopped");
+}
+
+// Advance circle state machine — called from loop()
+void circleUpdate() {
+    if (!circle.b_active) return;
+
+    // ── Phase 0: move from center to start (R, 0) via motorMoveSteps ──
+    if (circle.n_phase == 0) {
+        if (circle.b_segment_started) {
+            if (motors[0].b_running || motors[1].b_running) return;
+            // move-to-start complete → begin tracing
+            circle.b_segment_started = false;
+            circle.n_phase = 1;
+            circle.n_us__trace_start = micros();
+            return;
+        }
+        // issue the move
+        motorMoveSteps(0, circle.n_step__radius, circle.n_rpm);
+        circle.b_segment_started = true;
+        return;
+    }
+
+    // ── Phase 1: continuous tracing — modulate RPM with sin/cos ────────
+    if (circle.n_phase == 1) {
+        unsigned long n_now = micros();
+        unsigned long n_us_elapsed = n_now - circle.n_us__trace_start;
+        double n_angle = (double)n_us_elapsed / (double)circle.n_us__revolution * 2.0 * PI;
+
+        // check for revolution complete
+        if (!circle.b_loop && n_angle >= 2.0 * PI) {
+            motorStop(0);
+            motorStop(1);
+            // return to exact center position
+            circle.n_phase = 2;
+            long n_dx = circle.n_pos_x__center - motors[0].n_position;
+            long n_dy = circle.n_pos_y__center - motors[1].n_position;
+            if (n_dx != 0) motorMoveSteps(0, n_dx, circle.n_rpm);
+            if (n_dy != 0) motorMoveSteps(1, n_dy, circle.n_rpm);
+            circle.b_segment_started = (n_dx != 0 || n_dy != 0);
+            return;
+        }
+
+        // wrap angle for loop mode
+        while (circle.b_loop && n_angle >= 2.0 * PI) {
+            circle.n_us__trace_start += circle.n_us__revolution;
+            n_angle -= 2.0 * PI;
+        }
+
+        // x = R*cos(θ), y = R*sin(θ)
+        // vx = -R*sin(θ)*ω  →  rpm_x ∝ |sin(θ)|, dir_x = -sign(sin(θ))
+        // vy =  R*cos(θ)*ω  →  rpm_y ∝ |cos(θ)|, dir_y =  sign(cos(θ))
+        double n_sin = sin(n_angle);
+        double n_cos = cos(n_angle);
+
+        float n_rpm_x = circle.n_rpm * (float)fabs(n_sin);
+        float n_rpm_y = circle.n_rpm * (float)fabs(n_cos);
+        int   n_dir_x = (n_sin >= 0) ? -1 : 1;
+        int   n_dir_y = (n_cos >= 0) ?  1 : -1;
+
+        static const float N_RPM_MIN = 0.05;
+
+        // update motor X
+        if (n_rpm_x < N_RPM_MIN) {
+            motors[0].n_us__step_delay = 0;   // pause stepping, keep coils held
+        } else {
+            motors[0].n_direction = n_dir_x;
+            motorSetRPM(0, n_rpm_x);
+            if (!motors[0].b_running) {
+                motors[0].mode = MODE_CONTINUOUS;
+                motors[0].b_running = true;
+                motors[0].n_us__last_step = n_now;
+            }
+        }
+
+        // update motor Y
+        if (n_rpm_y < N_RPM_MIN) {
+            motors[1].n_us__step_delay = 0;
+        } else {
+            motors[1].n_direction = n_dir_y;
+            motorSetRPM(1, n_rpm_y);
+            if (!motors[1].b_running) {
+                motors[1].mode = MODE_CONTINUOUS;
+                motors[1].b_running = true;
+                motors[1].n_us__last_step = n_now;
+            }
+        }
+        return;
+    }
+
+    // ── Phase 2: return to center via motorMoveSteps ──────────────────
+    if (circle.n_phase == 2) {
+        if (circle.b_segment_started) {
+            if (motors[0].b_running || motors[1].b_running) return;
+            circle.b_segment_started = false;
+        }
+        circle.b_active = false;
+        circleSendEvent("circleComplete");
+        return;
+    }
+}
+
 // ─── Motor update (called every loop) ───────────────────────────────
 
 void motorsUpdate() {
@@ -302,6 +481,14 @@ void sendStatus(AsyncWebSocketClient *client = nullptr) {
         mo["s_mode"]            = s_mode;
         mo["n_step__remaining"] = n_remaining;
     }
+    // circle state
+    JsonObject o_circle = doc["o_circle"].to<JsonObject>();
+    o_circle["b_active"] = circle.b_active;
+    if (circle.b_active) {
+        o_circle["n_phase"] = circle.n_phase;
+        o_circle["b_loop"]  = circle.b_loop;
+    }
+
     String json;
     serializeJson(doc, json);
     if (client) client->text(json);
@@ -329,10 +516,31 @@ void handleWsMessage(AsyncWebSocketClient *client, uint8_t *data, size_t len) {
     if (doc["command"].is<const char*>()) {
         String cmd = doc["command"].as<String>();
         if (cmd == "stopAll") {
+            if (circle.b_active) circleStop();
             for (int i = 0; i < NUM_MOTORS; i++) motorStop(i);
             sendStatus(); return;
         }
         if (cmd == "status") { sendStatus(client); return; }
+
+        if (cmd == "circleStart") {
+            long  n_radius = doc["n_step__radius"] | 100L;
+            float n_rpm    = doc["n_rpm"]           | 8.0f;
+            bool  b_loop   = doc["b_loop"]          | false;
+            if (n_radius < 1) n_radius = 1;
+            circleStart(n_radius, n_rpm, b_loop);
+            sendStatus(); return;
+        }
+
+        if (cmd == "circleStop") {
+            circleStop();
+            sendStatus(); return;
+        }
+    }
+
+    // block motor commands while circle is active
+    if (circle.b_active) {
+        client->text("{\"error\":\"circle mode active\"}");
+        return;
     }
 
     // per-motor commands
@@ -412,6 +620,7 @@ void setup() {
     Serial.println("\n=== Stepper WebSocket API ===\n");
 
     motorInit();
+    circleInit();
     Serial.println("Motors initialised.");
 
     WiFi.mode(WIFI_STA);
@@ -430,16 +639,19 @@ void setup() {
 
 void loop() {
     motorsUpdate();
+    circleUpdate();
 
-    // send queued move events (outside the tight stepping loop)
+    // send queued move events (suppress during circle mode — internal moves)
     for (int i = 0; i < n_cnt__move_event; i++) {
         if (a_o_move_event[i].b_pending) {
-            sendMoveEvent(
-                a_o_move_event[i].b_complete,
-                a_o_move_event[i].n_motor,
-                a_o_move_event[i].n_position
-            );
-            sendStatus();
+            if (!circle.b_active) {
+                sendMoveEvent(
+                    a_o_move_event[i].b_complete,
+                    a_o_move_event[i].n_motor,
+                    a_o_move_event[i].n_position
+                );
+                sendStatus();
+            }
             a_o_move_event[i].b_pending = false;
         }
     }

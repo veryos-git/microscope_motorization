@@ -588,6 +588,19 @@ input[type="range"]::-moz-range-thumb {
   padding: 8px; background: rgba(10,10,12,0.4); border-radius: 6px;
 }
 
+.btn-scan-test-square {
+  width: 100%; margin-top: 8px;
+}
+
+.scan-toggle {
+  display: flex; align-items: center; gap: 6px;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;
+  color: var(--dim); cursor: pointer; user-select: none;
+}
+.scan-toggle input[type="checkbox"] {
+  accent-color: var(--accent-0); width: 14px; height: 14px; cursor: pointer;
+}
+
 .btn-scan-start {
   width: 100%; padding: 12px 20px; margin-top: 8px;
   background: var(--accent-1); color: #000; border: none; border-radius: 8px;
@@ -782,6 +795,131 @@ input[type="range"]::-moz-range-thumb {
   transition: all 0.15s;
 }
 .btn-manual-stitch-reset:hover { border-color: var(--text); }
+
+/* ─── Macro panel ─── */
+.panel-macro {
+  bottom: 16px; left: 50%; transform: translateX(-50%);
+  width: 300px; max-height: calc(100vh - 72px); overflow-y: auto;
+}
+
+.macro-section { margin-bottom: 12px; }
+
+.btn-macro {
+  width: 100%; padding: 10px 16px; border-radius: 8px;
+  border: 1px solid var(--border); background: transparent; color: var(--text);
+  font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; font-weight: 700;
+  cursor: pointer; transition: all 0.2s; text-transform: uppercase; letter-spacing: 1px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.btn-macro:hover { border-color: var(--text); }
+.btn-macro:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-macro.recording {
+  border-color: var(--danger); color: var(--danger);
+}
+.btn-macro.recording:hover { background: var(--danger); color: #000; }
+.btn-macro.play {
+  background: var(--accent-1); color: #000; border-color: var(--accent-1);
+}
+.btn-macro.play:hover { filter: brightness(1.1); }
+.btn-macro.stop {
+  border-color: var(--danger); color: var(--danger);
+}
+.btn-macro.stop:hover { background: var(--danger); color: #000; }
+.btn-macro.clear {
+  border-color: var(--border); color: var(--dim); font-size: 0.7rem;
+  padding: 6px 12px;
+}
+.btn-macro.clear:hover { color: var(--text); border-color: var(--text); }
+
+.macro-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--dim); flex-shrink: 0; transition: background 0.3s;
+}
+.macro-dot.active {
+  background: var(--danger);
+  animation: macro-pulse 1s infinite;
+}
+
+@keyframes macro-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.macro-info {
+  display: flex; align-items: baseline; gap: 6px;
+  margin-bottom: 12px; flex-wrap: wrap;
+}
+.macro-count {
+  font-family: 'JetBrains Mono', monospace; font-size: 1.4rem;
+  font-weight: 700; color: var(--text);
+}
+.macro-label {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--dim);
+}
+.macro-duration {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;
+  color: var(--accent-2); margin-left: auto;
+}
+
+.macro-empty {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.8rem;
+  color: var(--dim); text-align: center; padding: 16px 0;
+}
+
+.macro-command-list {
+  max-height: 200px; overflow-y: auto;
+  margin-bottom: 12px; border: 1px solid var(--border); border-radius: 6px;
+}
+
+.macro-command-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-bottom: 1px solid var(--border);
+  font-family: 'JetBrains Mono', monospace; font-size: 0.65rem;
+  color: var(--dim); transition: background 0.15s;
+}
+.macro-command-item:last-child { border-bottom: none; }
+.macro-command-item.active {
+  background: rgba(91, 141, 239, 0.1); color: var(--text);
+}
+
+.macro-cmd-idx {
+  color: var(--dim); min-width: 20px; text-align: right;
+}
+.macro-cmd-delta {
+  color: var(--accent-2); min-width: 60px; text-align: right;
+}
+.macro-cmd-desc {
+  color: var(--text); flex: 1; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+
+.macro-playback { margin-bottom: 10px; }
+.macro-loop-toggle { margin-bottom: 8px; }
+.macro-playback-btn-row { display: flex; gap: 8px; }
+.macro-clear { margin-top: 4px; }
+
+/* ─── Auto move panel ─── */
+.panel-auto-move {
+  top: 56px; right: 390px; width: 340px;
+  max-height: calc(100vh - 72px); overflow-y: auto;
+}
+
+.auto-move-mode-toggle {
+  margin-bottom: 16px;
+}
+
+.auto-move-btn-row {
+  display: flex; gap: 8px; margin-top: 8px;
+}
+
+.auto-move-btn-once,
+.auto-move-btn-loop {
+  flex: 1;
+}
+
+.auto-move-btn-loop {
+  background: var(--accent-2);
+}
 
 @media (max-width: 768px) {
   .toolbar-title { display: none; }

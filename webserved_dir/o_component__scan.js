@@ -1,4 +1,4 @@
-import { o_state, f_send_esp, f_send_esp_move_step, f_send_wsmsg_with_response, f_save_setting__debounced } from './index.js';
+import { o_state, f_send_esp_move_step, f_send_esp_stop, f_send_esp_stop_all, f_send_wsmsg_with_response, f_save_setting__debounced } from './index.js';
 import { f_o_wsmsg } from './constructors.module.js';
 
 let N_RPM__SCAN = 8.0;
@@ -96,6 +96,23 @@ let o_component__scan = {
                         <div class="scan-total">
                             {{ n_tile_x }} &times; {{ n_tile_y }} = {{ n_tile_x * n_tile_y }} images
                         </div>
+
+                        <button
+                            class="btn-small btn-scan-test-square"
+                            @click="f_test_square"
+                            :disabled="b_testing || !o_state.b_connected__esp || n_step__x < 1 || n_step__y < 1 || n_tile_x < 1 || n_tile_y < 1"
+                        >{{ b_testing ? 'Testing...' : 'Test Square' }}</button>
+                    </div>
+
+                    <div class="scan-section">
+                        <label class="scan-toggle">
+                            <input type="checkbox" v-model="b_row_by_row" @change="f_save_config" />
+                            <span>Row by row stitching</span>
+                        </label>
+                        <div class="scan-hint">
+                            Stitch each row first, then combine all rows.
+                            More reliable for large grids.
+                        </div>
                     </div>
 
                     <button
@@ -177,6 +194,7 @@ let o_component__scan = {
             n_step__y: 30,
             n_tile_x: 3,
             n_tile_y: 3,
+            b_row_by_row: false,
 
             // state machine: 'idle' | 'scanning' | 'complete'
             s_status: 'idle',
@@ -229,6 +247,7 @@ let o_component__scan = {
                     if (o_config.n_step__y) o_self.n_step__y = o_config.n_step__y;
                     if (o_config.n_tile_x) o_self.n_tile_x = o_config.n_tile_x;
                     if (o_config.n_tile_y) o_self.n_tile_y = o_config.n_tile_y;
+                    if (typeof o_config.b_row_by_row === 'boolean') o_self.b_row_by_row = o_config.b_row_by_row;
                 } catch (e) { /* ignore parse errors */ }
             }
         },
@@ -239,6 +258,7 @@ let o_component__scan = {
                 n_step__y: this.n_step__y,
                 n_tile_x: this.n_tile_x,
                 n_tile_y: this.n_tile_y,
+                b_row_by_row: this.b_row_by_row,
             });
         },
 
@@ -257,7 +277,7 @@ let o_component__scan = {
             let v_result = await Promise.race([o_promise__move, o_promise__timeout]);
             if (v_result === 'timeout') {
                 console.warn('Move timeout: motor', n_motor);
-                f_send_esp({ motor: n_motor, command: 'stop' });
+                f_send_esp_stop(n_motor);
             }
         },
 
@@ -314,12 +334,35 @@ let o_component__scan = {
         f_test_distance: async function(s_axis, n_sign) {
             let o_self = this;
             o_self.b_testing = true;
+            o_self.b_stop_requested = false;
             try {
                 let n_motor = (s_axis === 'x') ? 0 : 1;
                 let n_step = (s_axis === 'x') ? o_self.n_step__x : o_self.n_step__y;
                 await o_self.f_move_motor_n_step(n_motor, n_step * n_sign);
             } catch (e) {
                 console.error('Test distance error:', e);
+            }
+            o_self.b_testing = false;
+        },
+
+        f_test_square: async function() {
+            let o_self = this;
+            o_self.b_testing = true;
+            o_self.b_stop_requested = false;
+            try {
+                let n_total_x = (o_self.n_tile_x - 1) * o_self.n_step__x;
+                let n_total_y = (o_self.n_tile_y - 1) * o_self.n_step__y;
+
+                // move along right edge
+                if (n_total_x > 0) await o_self.f_move_motor_n_step(0, n_total_x);
+                // move along bottom edge
+                if (n_total_y > 0) await o_self.f_move_motor_n_step(1, n_total_y);
+                // move back along left edge
+                if (n_total_x > 0) await o_self.f_move_motor_n_step(0, -n_total_x);
+                // move back to start
+                if (n_total_y > 0) await o_self.f_move_motor_n_step(1, -n_total_y);
+            } catch (e) {
+                console.error('Test square error:', e);
             }
             o_self.b_testing = false;
         },
@@ -453,7 +496,10 @@ let o_component__scan = {
                 o_self.s_status = 'stitching';
                 try {
                     let o_resp = await f_send_wsmsg_with_response(
-                        f_o_wsmsg('manual_stitch_run', { s_path_folder: o_self.s_path_folder__scan })
+                        f_o_wsmsg('manual_stitch_run', {
+                            s_path_folder: o_self.s_path_folder__scan,
+                            b_row_by_row: o_self.b_row_by_row,
+                        })
                     );
                     let o_result = o_resp.v_result;
                     if(o_result && o_result.b_success){
@@ -472,11 +518,12 @@ let o_component__scan = {
 
         f_stop_scan: function() {
             this.b_stop_requested = true;
-            f_send_esp({ command: 'stopAll' });
+            f_send_esp_stop_all();
         },
 
         f_reset: function() {
             this.s_status = 'idle';
+            this.b_stop_requested = false;
             this.n_cnt__tile__captured = 0;
             this.n_idx__cell__current = -1;
             this.a_b_captured = [];

@@ -11,6 +11,8 @@ let o_component__page_control = {
         <o_component__scan />
         <o_component__camera_setting />
         <o_component__manual_stitch />
+        <o_component__macro />
+        <o_component__auto_move />
     `,
     data: function() {
         return {

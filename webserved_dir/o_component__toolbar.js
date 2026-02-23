@@ -49,6 +49,16 @@ let o_component__toolbar = {
                 :class="{ active: o_state.o_panel_visibility.manual_stitch }"
                 @click="f_toggle_panel('manual_stitch')"
             >Stitch</button>
+            <button
+                class="toolbar-toggle"
+                :class="{ active: o_state.o_panel_visibility.macro }"
+                @click="f_toggle_panel('macro')"
+            >Macro</button>
+            <button
+                class="toolbar-toggle"
+                :class="{ active: o_state.o_panel_visibility.auto_move }"
+                @click="f_toggle_panel('auto_move')"
+            >Auto</button>
 
             <div class="toolbar-spacer"></div>
 

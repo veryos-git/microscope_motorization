@@ -17,6 +17,8 @@ import { o_component__motor } from './o_component__motor.js';
 import { o_component__scan } from './o_component__scan.js';
 import { o_component__camera_setting } from './o_component__camera_setting.js';
 import { o_component__manual_stitch } from './o_component__manual_stitch.js';
+import { o_component__macro } from './o_component__macro.js';
+import { o_component__auto_move } from './o_component__auto_move.js';
 import { o_component__page_setup } from './o_component__page_setup.js';
 import { o_component__page_control } from './o_component__page_control.js';
 
@@ -50,7 +52,7 @@ let o_state = reactive({
     o_mapping__d: { s_motor: '0', s_dir: 'cw' },
 
     // UI
-    o_panel_visibility: { jog: true, minimap: true, motors: true, scan: false, camera_setting: false, manual_stitch: false },
+    o_panel_visibility: { jog: true, minimap: true, motors: true, scan: false, camera_setting: false, manual_stitch: false, macro: false, auto_move: false },
     o_key_held: {},
 
     // scan
@@ -71,6 +73,13 @@ let o_state = reactive({
     // toast
     a_o_toast: [],
     n_ts_ms_now: Date.now(),
+
+    // macro recording/playback
+    b_recording__macro: false,
+    b_playing__macro: false,
+    b_loop__macro: false,
+    a_o_command__macro: [],
+    n_ts_ms__macro_last: 0,
 
     // setup page state
     s_wifi_ssid: '',
@@ -210,6 +219,8 @@ let f_apply_setting_from_db = function(){
     o_state.o_panel_visibility.scan = o_vis.scan || false;
     o_state.o_panel_visibility.camera_setting = o_vis.camera_setting || false;
     o_state.o_panel_visibility.manual_stitch = o_vis.manual_stitch || false;
+    o_state.o_panel_visibility.macro = o_vis.macro || false;
+    o_state.o_panel_visibility.auto_move = o_vis.auto_move || false;
 
     o_state.o_mapping__w = f_get_json('o_mapping__w', o_state.o_mapping__w);
     o_state.o_mapping__s = f_get_json('o_mapping__s', o_state.o_mapping__s);
@@ -381,6 +392,13 @@ let f_send_esp = function(o_msg){
     if(o_ws__esp && o_ws__esp.readyState === WebSocket.OPEN){
         o_ws__esp.send(JSON.stringify(o_msg));
     }
+    // record macro commands (skip status polls)
+    if(o_state.b_recording__macro && o_msg.command !== 'status' && o_msg.command !== 'setBacklash'){
+        let n_ts_ms_now = Date.now();
+        let n_ms__delta = o_state.n_ts_ms__macro_last ? n_ts_ms_now - o_state.n_ts_ms__macro_last : 0;
+        o_state.n_ts_ms__macro_last = n_ts_ms_now;
+        o_state.a_o_command__macro.push({ n_ms__delta, o_msg: JSON.parse(JSON.stringify(o_msg)) });
+    }
 };
 
 // ─── ESP32 motor command helpers ─────────────────────────────────────
@@ -407,8 +425,52 @@ let f_send_esp_move_step = function(n_motor, n_step, n_rpm) {
     });
 };
 
+let f_send_esp_stop = function(n_motor) {
+    f_send_esp({ motor: n_motor, command: 'stop' });
+};
+
+let f_send_esp_stop_all = function() {
+    f_send_esp({ command: 'stopAll' });
+};
+
 let f_send_esp_set_backlash = function(n_motor, n_step__backlash) {
     f_send_esp({ motor: n_motor, command: 'setBacklash', n_step__backlash: n_step__backlash });
+};
+
+let f_send_esp_circle_start = function(n_step__radius, n_rpm, b_loop) {
+    return new Promise(function(resolve) {
+        if (!o_ws__esp || o_ws__esp.readyState !== WebSocket.OPEN) {
+            resolve('error');
+            return;
+        }
+        let f_cleanup = function() {
+            o_ws__esp.removeEventListener('message', f_on_message);
+            o_ws__esp.removeEventListener('close', f_on_close);
+        };
+        let f_on_message = function(o_evt) {
+            let o_data = JSON.parse(o_evt.data);
+            if (o_data.type === 'circleComplete' || o_data.type === 'circleStopped') {
+                f_cleanup();
+                resolve(o_data.type);
+            }
+        };
+        let f_on_close = function() {
+            f_cleanup();
+            resolve('disconnected');
+        };
+        o_ws__esp.addEventListener('message', f_on_message);
+        o_ws__esp.addEventListener('close', f_on_close);
+        f_send_esp({
+            command: 'circleStart',
+            n_step__radius: n_step__radius,
+            n_rpm: n_rpm,
+            b_loop: b_loop,
+        });
+    });
+};
+
+let f_send_esp_circle_stop = function() {
+    f_send_esp({ command: 'circleStop' });
 };
 
 // ─── Vue Router ─────────────────────────────────────────────────────
@@ -460,6 +522,8 @@ o_app.component('o_component__motor', o_component__motor);
 o_app.component('o_component__scan', o_component__scan);
 o_app.component('o_component__camera_setting', o_component__camera_setting);
 o_app.component('o_component__manual_stitch', o_component__manual_stitch);
+o_app.component('o_component__macro', o_component__macro);
+o_app.component('o_component__auto_move', o_component__auto_move);
 
 o_app.use(o_router);
 
@@ -476,7 +540,11 @@ export {
     f_send_esp,
     f_send_esp_run_continuous,
     f_send_esp_move_step,
+    f_send_esp_stop,
+    f_send_esp_stop_all,
     f_send_esp_set_backlash,
+    f_send_esp_circle_start,
+    f_send_esp_circle_stop,
     f_save_setting,
     f_save_setting__debounced,
 }

@@ -1,4 +1,4 @@
-import { o_state, f_send_esp, f_send_esp_run_continuous, f_send_esp_set_backlash, f_save_setting__debounced } from './index.js';
+import { o_state, f_send_esp, f_send_esp_run_continuous, f_send_esp_stop, f_send_esp_stop_all, f_send_esp_set_backlash, f_save_setting__debounced } from './index.js';
 
 let a_o_motor_config = [
     { s_name: 'Motor A', s_gpio: '4, 5, 6, 7' },
@@ -108,10 +108,10 @@ let o_component__motor = {
             }
         },
         f_stop_motor: function(n_idx) {
-            f_send_esp({ motor: n_idx, command: 'stop' });
+            f_send_esp_stop(n_idx);
         },
         f_stop_all: function() {
-            f_send_esp({ command: 'stopAll' });
+            f_send_esp_stop_all();
         },
         f_request_status: function() {
             f_send_esp({ command: 'status' });

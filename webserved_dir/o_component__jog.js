@@ -1,4 +1,4 @@
-import { o_state, f_send_esp, f_send_esp_run_continuous, f_save_setting, f_save_setting__debounced } from './index.js';
+import { o_state, f_send_esp_run_continuous, f_send_esp_stop, f_save_setting, f_save_setting__debounced } from './index.js';
 
 // ─── Gamepad constants ──────────────────────────────────────────────
 
@@ -140,7 +140,7 @@ let o_component__jog = {
 
             let o_mapping = o_self.f_get_mapping(s_key);
             if(o_mapping){
-                f_send_esp({ motor: o_mapping.motor, command: 'stop' });
+                f_send_esp_stop(o_mapping.motor);
             }
         },
         f_on_blur: function() {
@@ -149,7 +149,7 @@ let o_component__jog = {
                     o_state.o_key_held[s_key] = false;
                     let o_mapping = this.f_get_mapping(s_key);
                     if(o_mapping){
-                        f_send_esp({ motor: o_mapping.motor, command: 'stop' });
+                        f_send_esp_stop(o_mapping.motor);
                     }
                 }
             }
@@ -198,10 +198,10 @@ let o_component__jog = {
             let o_self = this;
             if(s_axis === 'x'){
                 let o_map = o_self.f_get_mapping('a') || o_self.f_get_mapping('d');
-                if(o_map) f_send_esp({ motor: o_map.motor, command: 'stop' });
+                if(o_map) f_send_esp_stop(o_map.motor);
             } else {
                 let o_map = o_self.f_get_mapping('w') || o_self.f_get_mapping('s');
-                if(o_map) f_send_esp({ motor: o_map.motor, command: 'stop' });
+                if(o_map) f_send_esp_stop(o_map.motor);
             }
         },
         f_gamepad_drive_axis: function(s_axis, n_val) {
